@@ -3,7 +3,7 @@
 import shelve
 import subprocess as sp
 import pandas as pd
-from GIANA4 import *
+from .GIANA4 import *
 
 def CreateReference(rFile, outdir='./', Vgene=True, ST=3):
     ## convert input reference file into a python workplace

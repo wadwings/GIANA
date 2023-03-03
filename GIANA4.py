@@ -35,7 +35,7 @@ from collections import Counter
 from sklearn.decomposition import PCA
 from sklearn.manifold import MDS
 import faiss
-from query import *
+from .query import *
 
 AAstring='ACDEFGHIKLMNPQRSTVWY'
 AAstringList=list(AAstring)
@@ -1101,6 +1101,111 @@ Input columns:
     parser.add_option("-r","--refFile",dest="ref", default='',help="Input reference file. Query model required.")
     parser.add_option("-b","--Verbose", dest='v', default=False, action="store_true", help="Verbose option: if given, GIANA will print intermediate messages.")
     return parser.parse_args()
+
+
+def giana(override=None):
+    if override is None:
+        override = {}
+    (opt,_)=CommandLineParser()
+    if override['File']:
+        opt.File = override['File']
+    if override['Mat']:
+        opt.Mat = override['Mat']
+    cutoff=float(opt.thr)
+    OutDir=opt.OutDir
+    thr_s=float(opt.thr_s)
+    ## Check if query mode first
+    qFile=opt.Query
+    if len(qFile)>0:
+        ## query mode
+        t1=time.time()
+        if qFile.endswith('/'):
+            ## input query is a directory
+            qFs=os.listdir(qFile)
+            qFileList=[]
+            for ff in qFs:
+                qFileList.append(qFile+ff)
+        else:
+            qFileList=[qFile]
+        rFile=opt.ref
+        if len(rFile)==0:
+            raise("Must provide reference file in query mode!")
+        else:
+            ## check if reference cluster file exists
+            rFile0=re.sub('\\.txt','',rFile)
+            refClusterFile=rFile0+'--RotationEncodingBL62.txt'
+            if not os.path.exists(refClusterFile):
+                raise("Must run clustering on reference file first! Did you forget to put the clustering file in this directory?")
+            rData=CreateReference(rFile)
+            t2=time.time()
+            print("Reference created. Elapsed %f" %(t2-t1))
+            for qf in qFileList:
+                t2_0=time.time()
+                print("Querying "+qf)
+                qf_s=qf.split('/')[-1]
+                #outFile=re.sub('\\.txt','',qf_s)+'_query_'+rFile0+'.txt'
+                outFile=os.path.splitext(qf_s)[0]+'_query_'+os.path.basename(rFile0)+'.txt'
+                of=OutDir+'/'+outFile
+                if path.exists(of):
+                    print(of+' already exits. Skipping.')
+                    continue
+                MakeQuery(qf, rData, thr=cutoff, thr_s=thr_s)
+                t2=time.time()
+                print("     Build query clustering file. Elapsed %f" %(t2-t1))
+                print("Now mering with reference cluster")
+                MergeExist(refClusterFile, OutDir+'/'+outFile)
+                t2=time.time()
+                print("         Time of elapsed for query %s: %f" %(qf, t2-t2_0))
+    else:
+        ## regular clustering mode
+        FileDir=opt.Directory
+        if len(FileDir)>0:
+                files=os.listdir(FileDir)
+                files0=[]
+                for ff in files:
+                        ff=FileDir+'/'+ff
+                        files0.append(ff)
+                files=files0
+        else:
+                files=[]
+        File=opt.File
+        if len(File)>0:
+                files=[File]
+        FileList=opt.files
+        if len(FileList)>0:
+                files=[]
+                fL=open(FileList)
+                for ff in fL.readlines():
+                        files.append(ff.strip())
+        VFa=opt.VFa
+        PreCalculateVgeneDist(VFa)
+        vf=open('./VgeneScores.txt')  ## Use tcrDist's Vgene 80-score calculation
+        VScore={}
+        VV=opt.V
+        EE=opt.E
+        Mat=opt.Mat
+        ST=int(opt.ST)
+        thr_v=float(opt.thr_v)
+        verbose=opt.v
+        if VV:
+            while 1:
+                line=vf.readline()
+                if len(line)==0:
+                    break
+                ww=line.strip().split('\t')
+                VScore[(ww[0],ww[1])]=int(ww[2])/20
+                VScore[(ww[1],ww[0])]=int(ww[2])/20
+        Gap=int(opt.Gap)
+        Gapn=int(opt.GapN)
+        OutFile=opt.OutFile
+        GPU=opt.GPU
+        st=3
+        ed=1
+        NT=int(opt.NN)
+        faiss.omp_set_num_threads(NT)
+        for ff in files:
+            print("Processing %s" %ff)
+            EncodeRepertoire(ff, OutDir, OutFile, ST=ST, thr_s=thr_s, thr_v=thr_v, exact=EE,VDict=VScore, Vgene=VV, thr_iso=cutoff, gap=Gap, GPU=GPU, Mat=Mat, verbose=verbose)
 
 def main():
     (opt,_)=CommandLineParser()
